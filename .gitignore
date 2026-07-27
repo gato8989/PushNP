@@ -1,9 +1,36 @@
+# Firebase
+firebase-service-account.json
+src/firebase-service-account.json
+*.key.json
+*.json
+
+# Node
 node_modules/
 .env
+.env.local
+.env.*.local
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
 .DS_Store
-dist/
-coverage/
+Thumbs.db
+
+# IDE
+.vscode/
 .idea/
 *.iml
-firebase-service-account.json
+
+# Build
+dist/
+build/
+*.min.js
+*.min.css
+
+# Secrets
+*.pem
+*.key
+*.crt
+*.p12
