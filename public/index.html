@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Push Notifications POC</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="description" content="Prueba de concepto para Push Notifications">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">📱</span>
+                    <h1>Push Notifications POC</h1>
+                </div>
+                <div class="status-indicator" id="serverStatus">
+                    <span class="status-dot offline"></span>
+                    <span class="status-text">Desconectado</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Device Registration Card -->
+            <section class="card card-primary">
+                <div class="card-header">
+                    <h2>📱 Dispositivo</h2>
+                    <span class="badge" id="deviceBadge">No registrado</span>
+                </div>
+                <div class="card-body">
+                    <div class="device-info">
+                        <div class="info-row">
+                            <span class="info-label">Estado:</span>
+                            <span class="info-value" id="deviceStatus">
+                                <span class="text-muted">No registrado</span>
+                            </span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Token:</span>
+                            <span class="info-value device-token" id="deviceTokenDisplay">
+                                <span class="text-muted">No disponible</span>
+                            </span>
+                        </div>
+                    </div>
+                    <button id="registerBtn" class="btn btn-primary btn-lg">
+                        <span class="btn-icon">🔑</span>
+                        Registrar Dispositivo
+                    </button>
+                </div>
+            </section>
+
+            <!-- Send Notification Card -->
+            <section class="card card-secondary">
+                <div class="card-header">
+                    <h2>📨 Enviar Notificación</h2>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="notifTitle">
+                            Título
+                            <span class="label-hint">(opcional)</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            id="notifTitle" 
+                            class="form-input"
+                            placeholder="Ej: ¡Nueva notificación!" 
+                            value="📢 Notificación de prueba"
+                        >
+                    </div>
+                    <div class="form-group">
+                        <label for="notifBody">
+                            Mensaje
+                            <span class="label-hint">(opcional)</span>
+                        </label>
+                        <textarea 
+                            id="notifBody" 
+                            class="form-input"
+                            rows="2"
+                            placeholder="Escribe tu mensaje aquí..."
+                        >Esta es una notificación de prueba desde el servidor</textarea>
+                    </div>
+                    <div class="button-group">
+                        <button id="sendNotificationBtn" class="btn btn-success btn-lg">
+                            <span class="btn-icon">📤</span>
+                            Enviar Notificación
+                        </button>
+                        <button id="sendToAllBtn" class="btn btn-warning btn-lg">
+                            <span class="btn-icon">📢</span>
+                            Enviar a Todos
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Card -->
+            <section class="card card-secondary">
+                <div class="card-header">
+                    <h2>⚙️ Configuración</h2>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="serverUrl">
+                            URL del Backend
+                            <span class="label-hint">(servidor de notificaciones)</span>
+                        </label>
+                        <input 
+                            type="url" 
+                            id="serverUrl" 
+                            class="form-input"
+                            placeholder="https://tu-backend.railway.app" 
+                            value="http://localhost:3001"
+                        >
+                    </div>
+                    <button id="testConnectionBtn" class="btn btn-info">
+                        <span class="btn-icon">🔍</span>
+                        Probar Conexión
+                    </button>
+                </div>
+            </section>
+
+            <!-- Logs Card -->
+            <section class="card card-secondary">
+                <div class="card-header">
+                    <h2>📋 Registro de Actividad</h2>
+                    <button id="clearLogsBtn" class="btn btn-sm btn-danger">
+                        Limpiar
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="statusLog" class="logs-container">
+                        <div class="log-message log-info">
+                            <span class="log-time">${new Date().toLocaleTimeString()}</span>
+                            <span class="log-text">🚀 Aplicación iniciada</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p class="footer-text">
+                Push Notifications POC v1.0 | 
+                <span id="serverInfo">Conectando...</span>
+            </p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
