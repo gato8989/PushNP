@@ -1,111 +1,81 @@
 class PushNotificationApp {
     constructor() {
-        // Configuración
+        // ✅ CARGAR CONFIGURACIÓN
         this.backendUrl = localStorage.getItem('backendUrl') || 'https://pushnp-production.up.railway.app';
         
-        // ✅ USAR TOKEN FCM REAL SI EXISTE
-        // El token se inyecta desde la app Android mediante WebView
-        const fcmTokenFromAndroid = window.fcmToken || window.androidToken;
-        
-        if (fcmTokenFromAndroid && fcmTokenFromAndroid.length > 50) {
-            this.deviceToken = fcmTokenFromAndroid;
-            localStorage.setItem('deviceToken', fcmTokenFromAndroid);
-            localStorage.setItem('tokenType', 'fcm_real');
-            this.isRegistered = true;
-            this.addLog('✅ Token FCM real detectado desde Android', 'success');
-        } else {
-            this.deviceToken = localStorage.getItem('deviceToken') || null;
-            this.isRegistered = false;
-        }
-        
+        // ✅ CARGAR TOKEN DE LOCALSTORAGE
+        this.deviceToken = localStorage.getItem('deviceToken') || null;
+        this.isRegistered = false;
         this.serverStatus = 'offline';
         this.elements = {};
+        
+        // ✅ SI HAY TOKEN EN LOCALSTORAGE, ESTÁ REGISTRADO
+        if (this.deviceToken && this.deviceToken.length > 10) {
+            this.isRegistered = true;
+            console.log('🔑 Token cargado de localStorage:', this.deviceToken.substring(0, 30) + '...');
+        }
+        
         this.initializeApp();
     }
 
     initializeApp() {
-        // Obtener referencias a elementos
         this.cacheElements();
-        
-        // Configurar event listeners
         this.setupEventListeners();
-        
-        // Actualizar UI
         this.updateUI();
-        
-        // Verificar conexión al servidor
-        this.checkServerConnection();
-        
-        // Cargar URL guardada
         this.loadSavedConfig();
         
-        // Log de inicio
+        // ✅ SI YA HAY TOKEN, ACTUALIZAR UI
+        if (this.deviceToken) {
+            this.addLog(`🔑 Token recuperado: ${this.deviceToken.substring(0, 20)}...`, 'info');
+            this.updateUI();
+        }
+        
+        setTimeout(() => {
+            this.checkServerConnection();
+        }, 1000);
+        
         this.addLog('🚀 Aplicación iniciada correctamente', 'info');
-        this.addLog('💡 Registra un dispositivo para comenzar', 'info');
+        this.addLog(`📡 Backend: ${this.backendUrl}`, 'info');
+        
+        if (!this.deviceToken) {
+            this.addLog('💡 Registra un dispositivo para comenzar', 'info');
+        }
     }
 
     cacheElements() {
         this.elements = {
-            // Status
             serverStatus: document.getElementById('serverStatus'),
             statusDot: document.querySelector('.status-dot'),
             statusText: document.querySelector('.status-text'),
-            
-            // Device
             deviceBadge: document.getElementById('deviceBadge'),
             deviceStatus: document.getElementById('deviceStatus'),
             deviceToken: document.getElementById('deviceTokenDisplay'),
-            
-            // Buttons
             registerBtn: document.getElementById('registerBtn'),
             sendNotificationBtn: document.getElementById('sendNotificationBtn'),
             sendToAllBtn: document.getElementById('sendToAllBtn'),
             testConnectionBtn: document.getElementById('testConnectionBtn'),
             clearLogsBtn: document.getElementById('clearLogsBtn'),
-            
-            // Inputs
             serverUrl: document.getElementById('serverUrl'),
             notifTitle: document.getElementById('notifTitle'),
             notifBody: document.getElementById('notifBody'),
-            
-            // Logs
             statusLog: document.getElementById('statusLog'),
-            
-            // Server info
             serverInfo: document.getElementById('serverInfo')
         };
     }
 
     setupEventListeners() {
-        // Registro de dispositivo
         this.elements.registerBtn.addEventListener('click', () => this.registerDevice());
-        
-        // Envío de notificaciones
         this.elements.sendNotificationBtn.addEventListener('click', () => this.sendNotification());
         this.elements.sendToAllBtn.addEventListener('click', () => this.sendToAll());
-        
-        // Configuración
         this.elements.testConnectionBtn.addEventListener('click', () => this.testConnection());
         this.elements.clearLogsBtn.addEventListener('click', () => this.clearLogs());
         
-        // Guardar URL al cambiar
         this.elements.serverUrl.addEventListener('change', (e) => {
-            this.backendUrl = e.target.value.trim();
+            const url = e.target.value.trim().replace(/\/$/, '');
+            this.backendUrl = url;
             localStorage.setItem('backendUrl', this.backendUrl);
             this.addLog(`🔧 URL del backend actualizada: ${this.backendUrl}`, 'info');
-        });
-        
-        // Enter key en campos
-        this.elements.notifTitle.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.elements.notifBody.focus();
-            }
-        });
-        
-        this.elements.notifBody.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-                this.sendNotification();
-            }
+            this.checkServerConnection();
         });
     }
 
@@ -115,38 +85,39 @@ class PushNotificationApp {
             this.elements.serverUrl.value = savedUrl;
             this.backendUrl = savedUrl;
         }
-        
-        const savedToken = localStorage.getItem('deviceToken');
-        if (savedToken) {
-            this.deviceToken = savedToken;
-            this.isRegistered = true;
-            this.updateUI();
-            this.addLog(`🔑 Token recuperado: ${this.deviceToken.substring(0, 20)}...`, 'info');
-        }
     }
 
     async checkServerConnection() {
         try {
+            this.addLog(`🔍 Conectando a: ${this.backendUrl}/health`, 'info');
+            
             const response = await fetch(`${this.backendUrl}/health`, {
                 method: 'GET',
                 headers: {
-                    'Content-Type': 'application/json'
-                },
-                timeout: 5000
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
             });
             
-            if (response.ok) {
-                const data = await response.json();
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.status === 'OK') {
                 this.updateServerStatus('online');
-                this.addLog(`✅ Servidor conectado (${data.timestamp})`, 'success');
-                this.elements.serverInfo.textContent = `🟢 Servidor en línea`;
+                this.addLog(`✅ Servidor conectado correctamente`, 'success');
+                this.addLog(`📊 Timestamp: ${data.timestamp}`, 'info');
+                this.elements.serverInfo.textContent = `🟢 Servidor en línea (${data.timestamp})`;
                 return true;
             } else {
-                throw new Error('Respuesta inválida del servidor');
+                throw new Error('Respuesta inesperada del servidor');
             }
         } catch (error) {
             this.updateServerStatus('offline');
             this.addLog(`❌ Error de conexión: ${error.message}`, 'error');
+            this.addLog(`💡 Verifica que el backend esté ejecutándose en: ${this.backendUrl}`, 'warning');
             this.elements.serverInfo.textContent = '🔴 Servidor desconectado';
             return false;
         }
@@ -168,60 +139,99 @@ class PushNotificationApp {
 
     async registerDevice() {
         try {
-            // Verificar conexión primero
             const isConnected = await this.checkServerConnection();
             if (!isConnected) {
-                this.addLog('⚠️ No se puede registrar sin conexión al servidor', 'error');
+                this.addLog('⚠️ No hay conexión al servidor', 'error');
                 return;
             }
 
-            // Generar token único
-            const timestamp = Date.now();
-            const random = Math.random().toString(36).substring(7);
-            const token = `device_${timestamp}_${random}`;
+            // ✅ VERIFICAR SI YA HAY TOKEN EN LOCALSTORAGE
+            let token = localStorage.getItem('deviceToken');
             
-            this.addLog('🔑 Generando token de dispositivo...', 'info');
+            // Si no hay token en localStorage, verificar window
+            if (!token || token === 'undefined' || token === 'null') {
+                token = window.fcmToken || window.androidToken;
+            }
             
-            // Registrar en el backend
+            // Si no hay token FCM, generar uno de prueba
+            if (!token || token === 'undefined' || token === 'null' || token.length < 10) {
+                const timestamp = Date.now();
+                const random = Math.random().toString(36).substring(7);
+                token = `device_${timestamp}_${random}`;
+                this.addLog('🔑 Generando token de prueba...', 'info');
+            } else {
+                this.addLog('🔑 Usando token existente', 'info');
+            }
+            
+            // ✅ REGISTRAR EN EL SERVIDOR
+            this.addLog(`📝 Registrando en el servidor...`, 'info');
+            
             const response = await fetch(`${this.backendUrl}/api/register-device`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ token })
+                body: JSON.stringify({ token: token })
             });
 
-            const data = await response.json();
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
 
+            const data = await response.json();
+            console.log('📊 Registro:', data);
+            
             if (data.success) {
+                // ✅ GUARDAR EN LOCALSTORAGE Y CLASE
+                localStorage.setItem('deviceToken', token);
                 this.deviceToken = token;
                 this.isRegistered = true;
-                localStorage.setItem('deviceToken', token);
                 
                 this.addLog(`✅ Dispositivo registrado exitosamente`, 'success');
                 this.addLog(`🔑 Token: ${token.substring(0, 30)}...`, 'info');
+                this.addLog(`📊 Total dispositivos: ${data.totalDevices || 'N/A'}`, 'info');
                 
                 this.updateUI();
             } else {
                 throw new Error(data.error || 'Error al registrar dispositivo');
             }
         } catch (error) {
+            console.error('❌ Error:', error);
             this.addLog(`❌ Error al registrar: ${error.message}`, 'error');
         }
     }
 
     async sendNotification() {
-        if (!this.isRegistered || !this.deviceToken) {
-            this.addLog('⚠️ Primero debes registrar un dispositivo', 'error');
-            this.elements.registerBtn.focus();
+        // ✅ OBTENER TOKEN DIRECTAMENTE DE LOCALSTORAGE
+        let token = localStorage.getItem('deviceToken');
+        
+        // Si no hay en localStorage, intentar con window
+        if (!token || token === 'undefined' || token === 'null') {
+            token = window.fcmToken || window.androidToken;
+            if (token) {
+                localStorage.setItem('deviceToken', token);
+            }
+        }
+        
+        // ✅ VERIFICAR QUE EL TOKEN EXISTA
+        if (!token || token === 'undefined' || token === 'null' || token.length < 10) {
+            this.addLog('⚠️ No hay token válido. Registra un dispositivo.', 'error');
+            this.isRegistered = false;
+            this.updateUI();
             return;
         }
 
+        // ✅ ACTUALIZAR EL TOKEN EN LA CLASE
+        this.deviceToken = token;
+        this.isRegistered = true;
+        
         const title = this.elements.notifTitle.value.trim() || '📢 Notificación de prueba';
-        const body = this.elements.notifBody.value.trim() || 'Esta es una notificación de prueba desde el servidor';
+        const body = this.elements.notifBody.value.trim() || 'Esta es una notificación de prueba';
 
         try {
             this.addLog(`📨 Enviando notificación: "${title}"`, 'info');
+            this.addLog(`🔑 Token: ${token.substring(0, 25)}...`, 'info');
             
             const response = await fetch(`${this.backendUrl}/api/send-notification`, {
                 method: 'POST',
@@ -229,134 +239,110 @@ class PushNotificationApp {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    token: this.deviceToken,
-                    title,
-                    body,
+                    token: token,
+                    title: title,
+                    body: body,
                     data: {
                         timestamp: new Date().toISOString(),
-                        source: 'web-app',
-                        device: this.deviceToken
+                        source: 'web-app'
                     }
                 })
             });
 
-            const data = await response.json();
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
 
+            const data = await response.json();
+            console.log('📊 Respuesta:', data);
+            
             if (data.success) {
                 this.addLog(`✅ Notificación enviada exitosamente`, 'success');
-                this.addLog(`📤 Destino: ${data.data.token.substring(0, 20)}...`, 'info');
-                
-                // Efecto visual
-                this.elements.sendNotificationBtn.classList.add('pulse');
-                setTimeout(() => {
-                    this.elements.sendNotificationBtn.classList.remove('pulse');
-                }, 1000);
+                if (data.messageId) {
+                    this.addLog(`📤 ID: ${data.messageId}`, 'info');
+                }
             } else {
                 throw new Error(data.error || 'Error al enviar notificación');
             }
         } catch (error) {
+            console.error('❌ Error detallado:', error);
             this.addLog(`❌ Error al enviar: ${error.message}`, 'error');
+            
+            // Si el error es por token inválido, limpiar
+            if (error.message.includes('token') || error.message.includes('400') || error.message.includes('404')) {
+                this.addLog('💡 Token inválido. Re-registrando...', 'warning');
+                localStorage.removeItem('deviceToken');
+                this.deviceToken = null;
+                this.isRegistered = false;
+                this.updateUI();
+            }
         }
     }
 
-async sendToAll() {
-    // ✅ Obtener título y mensaje
-    const title = this.elements.notifTitle.value.trim() || '📢 Notificación masiva';
-    const body = this.elements.notifBody.value.trim() || 'Esta es una notificación para todos los dispositivos';
+    async sendToAll() {
+        const title = this.elements.notifTitle.value.trim() || '📢 Notificación masiva';
+        const body = this.elements.notifBody.value.trim() || 'Esta es una notificación para todos los dispositivos';
 
-    try {
-        this.addLog(`📢 Enviando notificación a TODOS los dispositivos...`, 'info');
-        
-        // ✅ Llamar al endpoint sin necesidad de tener la lista localmente
-        const response = await fetch(`${this.backendUrl}/api/send-to-all`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                title: title,
-                body: body,
-                data: {
-                    timestamp: new Date().toISOString(),
-                    source: 'web-app',
-                    type: 'massive'
-                }
-            })
-        });
-
-        // ✅ Verificar si la respuesta es OK
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || `HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('📊 Respuesta del servidor:', data);
-        
-        // ✅ Mostrar resultados en los logs
-        if (data.success) {
-            this.addLog(`✅ Notificaciones masivas enviadas exitosamente`, 'success');
+        try {
+            this.addLog(`📢 Enviando notificación a TODOS los dispositivos...`, 'info');
             
-            // Mostrar estadísticas
-            if (data.totalDevices !== undefined) {
-                this.addLog(`📊 Total dispositivos: ${data.totalDevices}`, 'info');
-            }
-            if (data.sentCount !== undefined) {
-                this.addLog(`✅ Enviadas: ${data.sentCount}`, 'success');
-            }
-            if (data.failedCount !== undefined && data.failedCount > 0) {
-                this.addLog(`⚠️ Fallaron: ${data.failedCount}`, 'warning');
-            }
-            
-            // Si hay tokens fallidos, mostrarlos
-            if (data.failedTokens && data.failedTokens.length > 0) {
-                this.addLog(`⚠️ Tokens inválidos: ${data.failedTokens.length}`, 'warning');
-                data.failedTokens.forEach((token, i) => {
-                    if (i < 3) { // Mostrar solo los primeros 3
-                        this.addLog(`   ${i+1}. ${token}...`, 'warning');
+            const response = await fetch(`${this.backendUrl}/api/send-to-all`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: title,
+                    body: body,
+                    data: {
+                        timestamp: new Date().toISOString(),
+                        source: 'web-app',
+                        type: 'massive'
                     }
-                });
-                if (data.failedTokens.length > 3) {
-                    this.addLog(`   ... y ${data.failedTokens.length - 3} más`, 'warning');
-                }
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
             }
-        } else {
-            throw new Error(data.error || 'Error al enviar notificaciones masivas');
-        }
-    } catch (error) {
-        console.error('❌ Error detallado:', error);
-        this.addLog(`❌ Error al enviar: ${error.message}`, 'error');
-        
-        // Sugerir posibles soluciones
-        if (error.message.includes('404') || error.message.includes('Not Found')) {
-            this.addLog('💡 El endpoint /api/send-to-all no existe en el servidor', 'warning');
-            this.addLog('💡 Asegúrate de que el backend tenga el endpoint implementado', 'warning');
-        } else if (error.message.includes('400')) {
-            this.addLog('💡 No hay dispositivos registrados en el servidor', 'warning');
-            this.addLog('💡 Registra al menos un dispositivo primero', 'warning');
-        } else if (error.message.includes('500')) {
-            this.addLog('💡 Error en el servidor. Revisa los logs de Railway', 'warning');
+
+            const data = await response.json();
+            console.log('📊 Respuesta:', data);
+            
+            if (data.success) {
+                this.addLog(`✅ Notificaciones masivas enviadas exitosamente`, 'success');
+                if (data.sentCount !== undefined) {
+                    this.addLog(`✅ Enviadas: ${data.sentCount}`, 'success');
+                }
+                if (data.failedCount !== undefined && data.failedCount > 0) {
+                    this.addLog(`⚠️ Fallaron: ${data.failedCount}`, 'warning');
+                }
+                if (data.totalDevices !== undefined) {
+                    this.addLog(`📊 Total: ${data.totalDevices} dispositivos`, 'info');
+                }
+            } else {
+                throw new Error(data.error || 'Error al enviar');
+            }
+        } catch (error) {
+            console.error('❌ Error:', error);
+            this.addLog(`❌ Error al enviar: ${error.message}`, 'error');
+            
+            if (error.message.includes('404')) {
+                this.addLog('💡 El endpoint /api/send-to-all no existe en el servidor', 'warning');
+            } else if (error.message.includes('400')) {
+                this.addLog('💡 No hay dispositivos registrados en el servidor', 'warning');
+            }
         }
     }
-}
+
     async testConnection() {
         this.addLog('🔍 Probando conexión con el servidor...', 'info');
         const isConnected = await this.checkServerConnection();
         
         if (isConnected) {
             this.addLog('✅ Conexión establecida correctamente', 'success');
-            
-            // Intentar obtener configuración
-            try {
-                const response = await fetch(`${this.backendUrl}/api/status`);
-                const data = await response.json();
-                this.addLog(`📊 Estado: ${data.status} (${data.timestamp})`, 'info');
-            } catch (error) {
-                // Ignorar error de status
-            }
-        } else {
-            this.addLog('❌ No se pudo establecer conexión', 'error');
-            this.addLog('💡 Verifica la URL y que el servidor esté corriendo', 'warning');
         }
     }
 
@@ -370,32 +356,49 @@ async sendToAll() {
         const badge = this.elements.deviceBadge;
         const status = this.elements.deviceStatus;
         const tokenDisplay = this.elements.deviceToken;
+        const sendBtn = this.elements.sendNotificationBtn;
+        const sendAllBtn = this.elements.sendToAllBtn;
 
-        if (this.isRegistered && this.deviceToken) {
+        // ✅ OBTENER TOKEN DE LOCALSTORAGE
+        let token = localStorage.getItem('deviceToken');
+        
+        // Si no hay en localStorage, intentar con window
+        if (!token || token === 'undefined' || token === 'null') {
+            token = window.fcmToken || window.androidToken;
+            if (token) {
+                localStorage.setItem('deviceToken', token);
+            }
+        }
+
+        // ✅ ACTUALIZAR CLASE
+        if (token && token.length > 10) {
+            this.deviceToken = token;
+            this.isRegistered = true;
+            
             badge.textContent = '✅ Registrado';
             badge.className = 'badge badge-success';
             status.innerHTML = '<span class="text-muted">Estado:</span> <span style="color: var(--success); font-weight: 600;">Registrado</span>';
-            tokenDisplay.innerHTML = `<span class="text-muted">Token:</span> <span class="device-token">${this.deviceToken}</span>`;
+            tokenDisplay.innerHTML = `<span class="text-muted">Token:</span> <span class="device-token">${token}</span>`;
             
-            // Habilitar botones
-            this.elements.sendNotificationBtn.disabled = false;
-            this.elements.sendToAllBtn.disabled = false;
+            sendBtn.disabled = false;
+            sendAllBtn.disabled = false;
         } else {
+            this.deviceToken = null;
+            this.isRegistered = false;
+            
             badge.textContent = '❌ No registrado';
             badge.className = 'badge badge-danger';
             status.innerHTML = '<span class="text-muted">Estado:</span> <span style="color: var(--danger);">No registrado</span>';
             tokenDisplay.innerHTML = '<span class="text-muted">Token:</span> <span class="text-muted">No disponible</span>';
             
-            // Deshabilitar botones
-            this.elements.sendNotificationBtn.disabled = true;
-            this.elements.sendToAllBtn.disabled = true;
+            sendBtn.disabled = true;
+            sendAllBtn.disabled = true;
         }
     }
 
     addLog(message, type = 'info') {
         const logContainer = this.elements.statusLog;
         const logEntry = document.createElement('div');
-        
         const time = new Date().toLocaleTimeString();
         
         logEntry.className = `log-message log-${type}`;
@@ -407,32 +410,16 @@ async sendToAll() {
         logContainer.appendChild(logEntry);
         logContainer.scrollTop = logContainer.scrollHeight;
 
-        // Mantener solo últimos 20 mensajes
         while (logContainer.children.length > 20) {
             logContainer.removeChild(logContainer.firstChild);
         }
     }
 }
 
-// Inicializar app cuando el DOM esté listo
+// Inicializar app
 document.addEventListener('DOMContentLoaded', () => {
-    // Pequeño delay para asegurar que todo esté cargado
     setTimeout(() => {
         const app = new PushNotificationApp();
-        // Exponer app globalmente para debugging
         window.app = app;
     }, 100);
 });
-
-// Soporte para PWA (Progressive Web App)
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then(registration => {
-                console.log('✅ Service Worker registrado');
-            })
-            .catch(err => {
-                console.log('❌ Error al registrar Service Worker:', err);
-            });
-    });
-}

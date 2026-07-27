@@ -25,13 +25,11 @@ const PORT = process.env.PORT || 3000;
 // ✅ INICIALIZAR FIREBASE - CON VERIFICACIÓN DE APP EXISTENTE
 if (admin) {
     try {
-        // Verificar si admin.credential existe
         if (!admin.credential) {
             console.error('❌ admin.credential no disponible');
             throw new Error('admin.credential es undefined');
         }
 
-        // ✅ VERIFICAR SI YA HAY UNA APP INICIALIZADA
         let existingApp = null;
         try {
             existingApp = admin.app();
@@ -41,13 +39,10 @@ if (admin) {
                 console.log('✅ Firebase Admin SDK ya estaba inicializado');
             }
         } catch (appError) {
-            // No existe app, proceder a inicializar
             console.log('ℹ️ No hay app existente, inicializando...');
         }
 
-        // Solo inicializar si no hay app existente
         if (!existingApp && !firebaseInitialized) {
-            // Intentar inicializar con variables de entorno
             if (process.env.FIREBASE_PROJECT_ID && 
                 process.env.FIREBASE_PRIVATE_KEY && 
                 process.env.FIREBASE_CLIENT_EMAIL) {
@@ -56,22 +51,18 @@ if (admin) {
                 
                 let privateKey = process.env.FIREBASE_PRIVATE_KEY;
                 
-                // Manejar ambos formatos: con \n o con saltos de línea reales
                 if (privateKey.includes('\\n')) {
                     privateKey = privateKey.replace(/\\n/g, '\n');
                     console.log('🔑 Reemplazados \\n por saltos de línea');
                 }
                 
-                // Verificar formato de la clave
                 if (!privateKey.includes('BEGIN PRIVATE KEY')) {
                     console.error('❌ La clave privada no tiene el formato correcto');
-                    console.error('💡 Debe comenzar con: -----BEGIN PRIVATE KEY-----');
                     throw new Error('Formato de clave privada inválido');
                 }
                 
                 if (!privateKey.includes('END PRIVATE KEY')) {
                     console.error('❌ La clave privada no termina correctamente');
-                    console.error('💡 Debe terminar con: -----END PRIVATE KEY-----');
                     throw new Error('Formato de clave privada inválido');
                 }
                 
@@ -86,9 +77,7 @@ if (admin) {
                 console.log('📱 Project ID:', credentials.projectId);
                 console.log('📧 Client Email:', credentials.clientEmail);
                 console.log('🔑 Private Key length:', credentials.privateKey.length);
-                console.log('🔑 Private Key starts with:', credentials.privateKey.substring(0, 30) + '...');
                 
-                // Inicializar Firebase
                 admin.initializeApp({
                     credential: admin.credential.cert(credentials),
                     projectId: process.env.FIREBASE_PROJECT_ID.trim()
@@ -101,7 +90,6 @@ if (admin) {
                 console.log('⚠️ Variables de entorno no configuradas');
                 console.log('💡 Usando archivo local (solo desarrollo)');
                 
-                // Fallback: intentar usar el archivo local
                 try {
                     const fs = require('fs');
                     const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
@@ -200,7 +188,7 @@ app.post('/api/register-device', (req, res) => {
     });
 });
 
-// Enviar notificación
+// Enviar notificación individual
 app.post('/api/send-notification', async (req, res) => {
     const { token, title, body, data } = req.body;
     
@@ -227,11 +215,8 @@ app.post('/api/send-notification', async (req, res) => {
         registeredTokens.push(token);
     }
 
-    // Si no hay Firebase, simular
     if (!firebaseInitialized || !admin) {
         console.log('⚠️ Firebase NO disponible, simulando envío');
-        console.log(`❌ Razón: ${firebaseError || 'Firebase no inicializado'}`);
-        
         return res.json({
             success: true,
             message: 'Notificación simulada (Firebase no disponible)',
@@ -321,10 +306,7 @@ app.post('/api/send-notification', async (req, res) => {
     }
 });
 
-// ============================================
-// ✅ ENVIAR A TODOS (MULTICAST)
-// ============================================
-
+// Enviar a TODOS los dispositivos (Multicast)
 app.post('/api/send-to-all', async (req, res) => {
     const { title, body, data } = req.body;
     
@@ -333,7 +315,6 @@ app.post('/api/send-to-all', async (req, res) => {
     console.log('  Mensaje:', body || 'Sin mensaje');
     console.log(`  📊 Dispositivos registrados: ${registeredTokens.length}`);
 
-    // Verificar si hay dispositivos
     if (registeredTokens.length === 0) {
         return res.status(400).json({
             success: false,
@@ -342,7 +323,6 @@ app.post('/api/send-to-all', async (req, res) => {
         });
     }
 
-    // Verificar Firebase
     if (!firebaseInitialized || !admin) {
         console.log('⚠️ Firebase NO disponible');
         return res.json({
@@ -354,7 +334,6 @@ app.post('/api/send-to-all', async (req, res) => {
     }
 
     try {
-        // Crear mensaje para multicast
         const message = {
             notification: {
                 title: title || '📢 Notificación masiva',
@@ -379,7 +358,6 @@ app.post('/api/send-to-all', async (req, res) => {
 
         console.log(`📤 Enviando a ${registeredTokens.length} dispositivos...`);
 
-        // Enviar a todos
         const response = await admin.messaging().sendEachForMulticast({
             ...message,
             tokens: registeredTokens
@@ -389,7 +367,6 @@ app.post('/api/send-to-all', async (req, res) => {
         console.log(`  ✅ Éxitos: ${response.successCount}`);
         console.log(`  ❌ Fallos: ${response.failureCount}`);
 
-        // Procesar resultados
         const results = response.responses.map((resp, index) => ({
             index: index,
             token: registeredTokens[index],
@@ -397,7 +374,6 @@ app.post('/api/send-to-all', async (req, res) => {
             error: resp.error ? resp.error.message : null
         }));
 
-        // Eliminar tokens inválidos
         const failedTokens = results
             .filter(r => !r.success && r.error?.includes('registration-token-not-registered'))
             .map(r => r.token);
@@ -430,7 +406,6 @@ app.post('/api/send-to-all', async (req, res) => {
         });
     }
 });
-
 
 // Ver tokens registrados
 app.get('/api/tokens', (req, res) => {
@@ -535,12 +510,12 @@ app.listen(PORT, () => {
         console.log(`❌ Error: ${firebaseError}`);
     }
     console.log(`📊 Dispositivos registrados: ${registeredTokens.length}`);
-    console.log(`🔍 admin.credential disponible: ${!!(admin && admin.credential)}`);
     console.log(`\n📋 Endpoints disponibles:`);
     console.log(`  GET  /health              - Health check`);
     console.log(`  GET  /api/status          - Estado del servidor`);
     console.log(`  POST /api/register-device - Registrar dispositivo`);
     console.log(`  POST /api/send-notification - Enviar notificación`);
+    console.log(`  POST /api/send-to-all     - Enviar a todos los dispositivos`);
     console.log(`  GET  /api/tokens          - Ver tokens registrados`);
     console.log(`  DELETE /api/tokens        - Eliminar todos los tokens`);
     console.log(`\n`);
