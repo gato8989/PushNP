@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 require('dotenv').config();
 
-// ✅ IMPORTAR FIREBASE ADMIN DE FORMA SIMPLE
+// ✅ IMPORTAR FIREBASE ADMIN
 let admin;
 let firebaseInitialized = false;
 let firebaseError = null;
@@ -22,18 +22,31 @@ try {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ INICIALIZAR FIREBASE (SIN await)
+// ✅ INICIALIZAR FIREBASE - CON VERIFICACIÓN DE APP EXISTENTE
 if (admin) {
     try {
         // Verificar si admin.credential existe
-        if (admin) {
-        try {
-            // Verificar si admin.credential existe
-            if (!admin.credential) {
-                console.error('❌ admin.credential no disponible');
-                throw new Error('admin.credential es undefined');
-            }
+        if (!admin.credential) {
+            console.error('❌ admin.credential no disponible');
+            throw new Error('admin.credential es undefined');
+        }
 
+        // ✅ VERIFICAR SI YA HAY UNA APP INICIALIZADA
+        let existingApp = null;
+        try {
+            existingApp = admin.app();
+            if (existingApp) {
+                console.log('ℹ️ Firebase app ya inicializada, reutilizando...');
+                firebaseInitialized = true;
+                console.log('✅ Firebase Admin SDK ya estaba inicializado');
+            }
+        } catch (appError) {
+            // No existe app, proceder a inicializar
+            console.log('ℹ️ No hay app existente, inicializando...');
+        }
+
+        // Solo inicializar si no hay app existente
+        if (!existingApp && !firebaseInitialized) {
             // Intentar inicializar con variables de entorno
             if (process.env.FIREBASE_PROJECT_ID && 
                 process.env.FIREBASE_PRIVATE_KEY && 
@@ -43,31 +56,27 @@ if (admin) {
                 
                 let privateKey = process.env.FIREBASE_PRIVATE_KEY;
                 
-                // ✅ Manejar ambos formatos: con \n o con saltos de línea reales
-                // Si la clave contiene \n como texto, reemplazarlos
+                // Manejar ambos formatos: con \n o con saltos de línea reales
                 if (privateKey.includes('\\n')) {
                     privateKey = privateKey.replace(/\\n/g, '\n');
                     console.log('🔑 Reemplazados \\n por saltos de línea');
                 }
                 
-                // ✅ Verificar que la clave tenga el formato correcto
+                // Verificar formato de la clave
                 if (!privateKey.includes('BEGIN PRIVATE KEY')) {
                     console.error('❌ La clave privada no tiene el formato correcto');
                     console.error('💡 Debe comenzar con: -----BEGIN PRIVATE KEY-----');
                     throw new Error('Formato de clave privada inválido');
                 }
                 
-                // ✅ Verificar que la clave termine correctamente
                 if (!privateKey.includes('END PRIVATE KEY')) {
                     console.error('❌ La clave privada no termina correctamente');
                     console.error('💡 Debe terminar con: -----END PRIVATE KEY-----');
                     throw new Error('Formato de clave privada inválido');
                 }
                 
-                // ✅ Limpiar espacios extras y saltos de línea duplicados
                 privateKey = privateKey.trim();
                 
-                // Crear credenciales
                 const credentials = {
                     projectId: process.env.FIREBASE_PROJECT_ID.trim(),
                     privateKey: privateKey,
@@ -119,87 +128,10 @@ if (admin) {
                     firebaseError = fileError.message;
                 }
             }
-        } catch (error) {
-            console.error('❌ Error al inicializar Firebase:', error.message);
-            console.error('📚 Stack:', error.stack);
-            firebaseError = error.message;
-            firebaseInitialized = false;
-        }
-    } else {
-        console.log('⚠️ Firebase Admin no disponible');
-        firebaseError = 'firebase-admin no instalado';
-    }
-
-        // Verificar si tenemos variables de entorno
-        if (process.env.FIREBASE_PROJECT_ID && 
-            process.env.FIREBASE_PRIVATE_KEY && 
-            process.env.FIREBASE_CLIENT_EMAIL) {
-            
-            console.log('🔧 Inicializando Firebase con variables de entorno...');
-            
-            // Reemplazar \n en la clave privada
-            let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-            privateKey = privateKey.replace(/\\n/g, '\n');
-            
-            // Verificar formato de la clave
-            if (!privateKey.includes('BEGIN PRIVATE KEY')) {
-                console.warn('⚠️ La clave privada no tiene el formato esperado');
-                console.warn('💡 Asegúrate de copiar el valor completo del archivo JSON');
-            }
-            
-            // Crear credenciales
-            const credentials = {
-                projectId: process.env.FIREBASE_PROJECT_ID,
-                privateKey: privateKey,
-                clientEmail: process.env.FIREBASE_CLIENT_EMAIL
-            };
-            
-            console.log('📱 Project ID:', credentials.projectId);
-            console.log('📧 Client Email:', credentials.clientEmail);
-            console.log('🔑 Private Key length:', credentials.privateKey.length);
-            
-            // Inicializar Firebase
-            admin.initializeApp({
-                credential: admin.credential.cert(credentials),
-                projectId: process.env.FIREBASE_PROJECT_ID
-            });
-            
-            firebaseInitialized = true;
-            console.log('✅ Firebase Admin SDK inicializado correctamente');
-            
-        } else {
-            console.log('⚠️ Variables de entorno no configuradas');
-            console.log('💡 Usando archivo local (solo desarrollo)');
-            
-            // Fallback: intentar usar el archivo local
-            try {
-                const fs = require('fs');
-                const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
-                
-                if (fs.existsSync(serviceAccountPath)) {
-                    console.log('📁 Cargando archivo local:', serviceAccountPath);
-                    const serviceAccount = require('./firebase-service-account.json');
-                    
-                    admin.initializeApp({
-                        credential: admin.credential.cert(serviceAccount),
-                        projectId: serviceAccount.project_id || 'push-notifications-poc'
-                    });
-                    
-                    firebaseInitialized = true;
-                    console.log('✅ Firebase inicializado con archivo local');
-                    console.log(`📱 Project ID: ${serviceAccount.project_id}`);
-                } else {
-                    console.log('❌ Archivo firebase-service-account.json no encontrado');
-                    console.log('💡 Configura las variables de entorno en Railway');
-                    firebaseError = 'Archivo de credenciales no encontrado';
-                }
-            } catch (fileError) {
-                console.error('❌ Error al cargar archivo local:', fileError.message);
-                firebaseError = fileError.message;
-            }
         }
     } catch (error) {
         console.error('❌ Error al inicializar Firebase:', error.message);
+        console.error('📚 Stack:', error.stack);
         firebaseError = error.message;
         firebaseInitialized = false;
     }
@@ -410,14 +342,36 @@ app.delete('/api/tokens', (req, res) => {
     });
 });
 
+// Eliminar un token específico
+app.delete('/api/tokens/:token', (req, res) => {
+    const token = req.params.token;
+    const index = registeredTokens.indexOf(token);
+    
+    if (index > -1) {
+        registeredTokens.splice(index, 1);
+        res.json({
+            success: true,
+            message: 'Token eliminado correctamente',
+            timestamp: new Date().toISOString()
+        });
+    } else {
+        res.status(404).json({
+            success: false,
+            error: 'Token no encontrado'
+        });
+    }
+});
+
 // ============================================
 // ✅ RUTAS EXISTENTES
 // ============================================
 
+// Ruta principal
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
+// Health check
 app.get('/health', (req, res) => {
     res.json({
         status: 'OK',
@@ -432,6 +386,7 @@ app.get('/health', (req, res) => {
     });
 });
 
+// API Status
 app.get('/api/status', (req, res) => {
     res.json({
         status: 'online',
