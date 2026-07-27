@@ -259,51 +259,86 @@ class PushNotificationApp {
         }
     }
 
-    async sendToAll() {
-        // Verificar si hay dispositivos registrados
-        if (this.registeredTokens.length === 0) {
-            this.addLog('⚠️ No hay dispositivos registrados. Registra al menos uno.', 'error');
-            return;
+async sendToAll() {
+    // ✅ Obtener título y mensaje
+    const title = this.elements.notifTitle.value.trim() || '📢 Notificación masiva';
+    const body = this.elements.notifBody.value.trim() || 'Esta es una notificación para todos los dispositivos';
+
+    try {
+        this.addLog(`📢 Enviando notificación a TODOS los dispositivos...`, 'info');
+        
+        // ✅ Llamar al endpoint sin necesidad de tener la lista localmente
+        const response = await fetch(`${this.backendUrl}/api/send-to-all`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                title: title,
+                body: body,
+                data: {
+                    timestamp: new Date().toISOString(),
+                    source: 'web-app',
+                    type: 'massive'
+                }
+            })
+        });
+
+        // ✅ Verificar si la respuesta es OK
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP ${response.status}`);
         }
 
-        const title = this.elements.notifTitle.value.trim() || '📢 Notificación masiva';
-        const body = this.elements.notifBody.value.trim() || 'Esta es una notificación para todos los dispositivos';
-
-        try {
-            this.addLog(`📢 Enviando notificación a ${this.registeredTokens.length} dispositivos...`, 'info');
+        const data = await response.json();
+        console.log('📊 Respuesta del servidor:', data);
+        
+        // ✅ Mostrar resultados en los logs
+        if (data.success) {
+            this.addLog(`✅ Notificaciones masivas enviadas exitosamente`, 'success');
             
-            const response = await fetch(`${this.backendUrl}/api/send-to-all`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title: title,
-                    body: body,
-                    data: {
-                        timestamp: new Date().toISOString(),
-                        source: 'web-app',
-                        type: 'massive'
-                    }
-                })
-            });
-
-            const data = await response.json();
-            
-            if (data.success) {
-                this.addLog(`✅ Notificaciones enviadas exitosamente`, 'success');
-                this.addLog(`📊 Enviadas: ${data.sentCount || data.totalDevices} dispositivos`, 'info');
-                if (data.failedCount && data.failedCount > 0) {
-                    this.addLog(`⚠️ Fallaron: ${data.failedCount} dispositivos`, 'warning');
-                }
-            } else {
-                throw new Error(data.error || 'Error al enviar notificaciones masivas');
+            // Mostrar estadísticas
+            if (data.totalDevices !== undefined) {
+                this.addLog(`📊 Total dispositivos: ${data.totalDevices}`, 'info');
             }
-        } catch (error) {
-            this.addLog(`❌ Error al enviar: ${error.message}`, 'error');
+            if (data.sentCount !== undefined) {
+                this.addLog(`✅ Enviadas: ${data.sentCount}`, 'success');
+            }
+            if (data.failedCount !== undefined && data.failedCount > 0) {
+                this.addLog(`⚠️ Fallaron: ${data.failedCount}`, 'warning');
+            }
+            
+            // Si hay tokens fallidos, mostrarlos
+            if (data.failedTokens && data.failedTokens.length > 0) {
+                this.addLog(`⚠️ Tokens inválidos: ${data.failedTokens.length}`, 'warning');
+                data.failedTokens.forEach((token, i) => {
+                    if (i < 3) { // Mostrar solo los primeros 3
+                        this.addLog(`   ${i+1}. ${token}...`, 'warning');
+                    }
+                });
+                if (data.failedTokens.length > 3) {
+                    this.addLog(`   ... y ${data.failedTokens.length - 3} más`, 'warning');
+                }
+            }
+        } else {
+            throw new Error(data.error || 'Error al enviar notificaciones masivas');
+        }
+    } catch (error) {
+        console.error('❌ Error detallado:', error);
+        this.addLog(`❌ Error al enviar: ${error.message}`, 'error');
+        
+        // Sugerir posibles soluciones
+        if (error.message.includes('404') || error.message.includes('Not Found')) {
+            this.addLog('💡 El endpoint /api/send-to-all no existe en el servidor', 'warning');
+            this.addLog('💡 Asegúrate de que el backend tenga el endpoint implementado', 'warning');
+        } else if (error.message.includes('400')) {
+            this.addLog('💡 No hay dispositivos registrados en el servidor', 'warning');
+            this.addLog('💡 Registra al menos un dispositivo primero', 'warning');
+        } else if (error.message.includes('500')) {
+            this.addLog('💡 Error en el servidor. Revisa los logs de Railway', 'warning');
         }
     }
-
+}
     async testConnection() {
         this.addLog('🔍 Probando conexión con el servidor...', 'info');
         const isConnected = await this.checkServerConnection();
