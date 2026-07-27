@@ -260,8 +260,9 @@ class PushNotificationApp {
     }
 
     async sendToAll() {
-        if (!this.isRegistered || !this.deviceToken) {
-            this.addLog('⚠️ Primero debes registrar un dispositivo', 'error');
+        // Verificar si hay dispositivos registrados
+        if (this.registeredTokens.length === 0) {
+            this.addLog('⚠️ No hay dispositivos registrados. Registra al menos uno.', 'error');
             return;
         }
 
@@ -269,14 +270,37 @@ class PushNotificationApp {
         const body = this.elements.notifBody.value.trim() || 'Esta es una notificación para todos los dispositivos';
 
         try {
-            this.addLog(`📢 Enviando notificación a todos los dispositivos`, 'warning');
+            this.addLog(`📢 Enviando notificación a ${this.registeredTokens.length} dispositivos...`, 'info');
             
-            // Simular envío a todos (en producción usarías un endpoint real)
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            const response = await fetch(`${this.backendUrl}/api/send-to-all`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: title,
+                    body: body,
+                    data: {
+                        timestamp: new Date().toISOString(),
+                        source: 'web-app',
+                        type: 'massive'
+                    }
+                })
+            });
+
+            const data = await response.json();
             
-            this.addLog(`✅ Notificación masiva enviada (simulada)`, 'success');
+            if (data.success) {
+                this.addLog(`✅ Notificaciones enviadas exitosamente`, 'success');
+                this.addLog(`📊 Enviadas: ${data.sentCount || data.totalDevices} dispositivos`, 'info');
+                if (data.failedCount && data.failedCount > 0) {
+                    this.addLog(`⚠️ Fallaron: ${data.failedCount} dispositivos`, 'warning');
+                }
+            } else {
+                throw new Error(data.error || 'Error al enviar notificaciones masivas');
+            }
         } catch (error) {
-            this.addLog(`❌ Error al enviar masivamente: ${error.message}`, 'error');
+            this.addLog(`❌ Error al enviar: ${error.message}`, 'error');
         }
     }
 

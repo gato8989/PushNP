@@ -14,6 +14,28 @@ router.get('/config', (req, res) => {
     });
 });
 
+// Endpoint para enviar a todos
+router.post('/send-to-all', async (req, res) => {
+    try {
+        const { title, body, data } = req.body;
+
+        // Aquí implementa la lógica para enviar a todos los tokens
+        // O redirige al backend principal
+        
+        res.json({
+            success: true,
+            message: 'Notificaciones masivas enviadas',
+            totalDevices: 0, // Reemplazar con el conteo real
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Endpoint proxy para registrar dispositivo
 router.post('/register-device', async (req, res) => {
     try {

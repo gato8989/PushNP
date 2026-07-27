@@ -321,6 +321,117 @@ app.post('/api/send-notification', async (req, res) => {
     }
 });
 
+// ============================================
+// ✅ ENVIAR A TODOS (MULTICAST)
+// ============================================
+
+app.post('/api/send-to-all', async (req, res) => {
+    const { title, body, data } = req.body;
+    
+    console.log('📢 RECIBIDA SOLICITUD MASIVA:');
+    console.log('  Título:', title || 'Sin título');
+    console.log('  Mensaje:', body || 'Sin mensaje');
+    console.log(`  📊 Dispositivos registrados: ${registeredTokens.length}`);
+
+    // Verificar si hay dispositivos
+    if (registeredTokens.length === 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'No hay dispositivos registrados',
+            message: 'Registra al menos un dispositivo primero'
+        });
+    }
+
+    // Verificar Firebase
+    if (!firebaseInitialized || !admin) {
+        console.log('⚠️ Firebase NO disponible');
+        return res.json({
+            success: false,
+            error: 'Firebase no disponible',
+            message: 'Las notificaciones no pueden enviarse',
+            firebaseAvailable: false
+        });
+    }
+
+    try {
+        // Crear mensaje para multicast
+        const message = {
+            notification: {
+                title: title || '📢 Notificación masiva',
+                body: body || 'Esta es una notificación para todos los dispositivos'
+            },
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'default_channel',
+                    sound: 'default',
+                    priority: 'high'
+                }
+            },
+            data: {
+                title: title || '📢 Notificación masiva',
+                body: body || 'Esta es una notificación para todos los dispositivos',
+                timestamp: new Date().toISOString(),
+                type: 'massive',
+                ...data
+            }
+        };
+
+        console.log(`📤 Enviando a ${registeredTokens.length} dispositivos...`);
+
+        // Enviar a todos
+        const response = await admin.messaging().sendEachForMulticast({
+            ...message,
+            tokens: registeredTokens
+        });
+
+        console.log('✅ RESULTADO:');
+        console.log(`  ✅ Éxitos: ${response.successCount}`);
+        console.log(`  ❌ Fallos: ${response.failureCount}`);
+
+        // Procesar resultados
+        const results = response.responses.map((resp, index) => ({
+            index: index,
+            token: registeredTokens[index],
+            success: resp.success,
+            error: resp.error ? resp.error.message : null
+        }));
+
+        // Eliminar tokens inválidos
+        const failedTokens = results
+            .filter(r => !r.success && r.error?.includes('registration-token-not-registered'))
+            .map(r => r.token);
+
+        if (failedTokens.length > 0) {
+            console.log(`⚠️ Eliminando ${failedTokens.length} tokens inválidos...`);
+            failedTokens.forEach(token => {
+                const idx = registeredTokens.indexOf(token);
+                if (idx > -1) {
+                    registeredTokens.splice(idx, 1);
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Notificaciones masivas enviadas',
+            totalDevices: registeredTokens.length,
+            sentCount: response.successCount,
+            failedCount: response.failureCount,
+            failedTokens: failedTokens.length > 0 ? failedTokens.map(t => t.substring(0, 20) + '...') : [],
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('❌ Error masivo:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Error interno del servidor'
+        });
+    }
+});
+
+
 // Ver tokens registrados
 app.get('/api/tokens', (req, res) => {
     res.json({
