@@ -5,59 +5,85 @@ const helmet = require('helmet');
 const compression = require('compression');
 require('dotenv').config();
 
-// ✅ FIREBASE ADMIN
-const admin = require('firebase-admin');
+// ✅ IMPORTAR FIREBASE ADMIN CON MANEJO DE ERRORES
+let admin;
+try {
+    admin = require('firebase-admin');
+    console.log('✅ Firebase Admin cargado correctamente');
+} catch (error) {
+    console.error('❌ Error al cargar firebase-admin:', error.message);
+    console.log('⚠️ Ejecuta: npm install firebase-admin');
+    admin = null;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ INICIALIZAR FIREBASE CON VARIABLES DE ENTORNO
+// ✅ INICIALIZAR FIREBASE CON VERIFICACIÓN
 let firebaseInitialized = false;
+let firebaseError = null;
 
-try {
-    // Verificar si tenemos las variables necesarias
-    if (process.env.FIREBASE_PROJECT_ID && 
-        process.env.FIREBASE_PRIVATE_KEY && 
-        process.env.FIREBASE_CLIENT_EMAIL) {
-        
-        // Reemplazar \n en la clave privada
-        const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
-        
-        admin.initializeApp({
-            credential: admin.credential.cert({
-                projectId: process.env.FIREBASE_PROJECT_ID,
-                privateKey: privateKey,
-                clientEmail: process.env.FIREBASE_CLIENT_EMAIL
-            }),
-            projectId: process.env.FIREBASE_PROJECT_ID
-        });
-        
-        firebaseInitialized = true;
-        console.log('✅ Firebase Admin SDK inicializado con variables de entorno');
-        console.log(`📱 Project ID: ${process.env.FIREBASE_PROJECT_ID}`);
-        console.log(`📧 Client Email: ${process.env.FIREBASE_CLIENT_EMAIL}`);
-        
-    } else {
-        console.log('⚠️ Variables de entorno no configuradas');
-        console.log('💡 Usando archivo local (solo desarrollo)');
-        
-        // Fallback: intentar usar el archivo (solo en desarrollo)
-        try {
-            const serviceAccount = require('./firebase-service-account.json');
+if (admin) {
+    try {
+        // Intentar inicializar con variables de entorno
+        if (process.env.FIREBASE_PROJECT_ID && 
+            process.env.FIREBASE_PRIVATE_KEY && 
+            process.env.FIREBASE_CLIENT_EMAIL) {
+            
+            console.log('🔧 Inicializando Firebase con variables de entorno...');
+            
+            // Reemplazar \n en la clave privada
+            const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+            
             admin.initializeApp({
-                credential: admin.credential.cert(serviceAccount),
-                projectId: process.env.FIREBASE_PROJECT_ID || 'push-notifications-poc'
+                credential: admin.credential.cert({
+                    projectId: process.env.FIREBASE_PROJECT_ID,
+                    privateKey: privateKey,
+                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL
+                }),
+                projectId: process.env.FIREBASE_PROJECT_ID
             });
+            
             firebaseInitialized = true;
-            console.log('✅ Firebase Admin SDK inicializado con archivo local');
-        } catch (fileError) {
-            console.error('❌ Error al cargar archivo local:', fileError.message);
-            console.log('⚠️ Las notificaciones FCM NO funcionarán');
+            console.log('✅ Firebase Admin SDK inicializado con variables de entorno');
+            console.log(`📱 Project ID: ${process.env.FIREBASE_PROJECT_ID}`);
+            console.log(`📧 Client Email: ${process.env.FIREBASE_CLIENT_EMAIL}`);
+            
+        } else {
+            console.log('⚠️ Variables de entorno no configuradas');
+            console.log('💡 Usando archivo local (solo desarrollo)');
+            
+            // Fallback: intentar usar el archivo local
+            try {
+                const fs = require('fs');
+                const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
+                
+                if (fs.existsSync(serviceAccountPath)) {
+                    const serviceAccount = require('./firebase-service-account.json');
+                    admin.initializeApp({
+                        credential: admin.credential.cert(serviceAccount),
+                        projectId: serviceAccount.project_id || 'push-notifications-poc'
+                    });
+                    firebaseInitialized = true;
+                    console.log('✅ Firebase Admin SDK inicializado con archivo local');
+                    console.log(`📱 Project ID: ${serviceAccount.project_id}`);
+                } else {
+                    console.log('❌ Archivo firebase-service-account.json no encontrado');
+                    console.log('💡 Configura las variables de entorno en Railway');
+                }
+            } catch (fileError) {
+                console.error('❌ Error al cargar archivo local:', fileError.message);
+                firebaseError = fileError.message;
+            }
         }
+    } catch (error) {
+        console.error('❌ Error al inicializar Firebase:', error.message);
+        firebaseError = error.message;
+        firebaseInitialized = false;
     }
-} catch (error) {
-    console.error('❌ Error al inicializar Firebase:', error.message);
-    console.log('⚠️ Las notificaciones FCM NO funcionarán');
+} else {
+    console.log('⚠️ Firebase Admin no disponible');
+    firebaseError = 'firebase-admin no instalado';
 }
 
 // Almacenamiento temporal de tokens
@@ -150,16 +176,19 @@ app.post('/api/send-notification', async (req, res) => {
         registeredTokens.push(token);
     }
 
-    // Si no hay Firebase, solo simular
-    if (!firebaseInitialized) {
-        console.log('⚠️ Firebase NO inicializado, simulando envío');
+    // Si no hay Firebase, simular
+    if (!firebaseInitialized || !admin) {
+        console.log('⚠️ Firebase NO disponible, simulando envío');
+        console.log(`❌ Razón: ${firebaseError || 'Firebase no inicializado'}`);
+        
         return res.json({
             success: true,
             message: 'Notificación simulada (Firebase no disponible)',
             messageId: 'simulated_' + Date.now(),
             tokenType: isFCMToken ? 'FCM_REAL' : 'TEST',
             timestamp: new Date().toISOString(),
-            warning: 'Firebase no inicializado'
+            warning: firebaseError || 'Firebase no inicializado',
+            firebaseAvailable: false
         });
     }
 
@@ -305,6 +334,7 @@ app.get('/health', (req, res) => {
         uptime: process.uptime(),
         environment: process.env.NODE_ENV || 'development',
         firebaseInitialized: firebaseInitialized,
+        firebaseError: firebaseError || null,
         registeredDevices: registeredTokens.length
     });
 });
@@ -316,6 +346,7 @@ app.get('/api/status', (req, res) => {
         timestamp: new Date().toISOString(),
         registeredDevices: registeredTokens.length,
         firebaseAvailable: firebaseInitialized,
+        firebaseError: firebaseError || null,
         environment: process.env.NODE_ENV || 'development'
     });
 });
@@ -342,6 +373,9 @@ app.listen(PORT, () => {
     console.log(`📱 URL: http://localhost:${PORT}`);
     console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔥 Firebase FCM: ${firebaseInitialized ? '✅ ACTIVADO' : '❌ DESACTIVADO'}`);
+    if (firebaseError) {
+        console.log(`❌ Error: ${firebaseError}`);
+    }
     console.log(`📊 Dispositivos registrados: ${registeredTokens.length}`);
     console.log(`\n📋 Endpoints disponibles:`);
     console.log(`  GET  /health              - Health check`);
