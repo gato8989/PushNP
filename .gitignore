@@ -6,5 +6,4 @@ dist/
 coverage/
 .idea/
 *.iml
-src/firebase-service-account.json
 firebase-service-account.json
