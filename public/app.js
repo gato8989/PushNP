@@ -1,14 +1,25 @@
 class PushNotificationApp {
     constructor() {
         // Configuración
-        this.backendUrl = localStorage.getItem('backendUrl') || 'http://localhost:3001';
-        this.deviceToken = localStorage.getItem('deviceToken') || null;
-        this.isRegistered = false;
+        this.backendUrl = localStorage.getItem('backendUrl') || 'https://pushnp-production.up.railway.app';
+        
+        // ✅ USAR TOKEN FCM REAL SI EXISTE
+        // El token se inyecta desde la app Android mediante WebView
+        const fcmTokenFromAndroid = window.fcmToken || window.androidToken;
+        
+        if (fcmTokenFromAndroid && fcmTokenFromAndroid.length > 50) {
+            this.deviceToken = fcmTokenFromAndroid;
+            localStorage.setItem('deviceToken', fcmTokenFromAndroid);
+            localStorage.setItem('tokenType', 'fcm_real');
+            this.isRegistered = true;
+            this.addLog('✅ Token FCM real detectado desde Android', 'success');
+        } else {
+            this.deviceToken = localStorage.getItem('deviceToken') || null;
+            this.isRegistered = false;
+        }
+        
         this.serverStatus = 'offline';
-        
-        // Elementos DOM
         this.elements = {};
-        
         this.initializeApp();
     }
 
