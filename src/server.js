@@ -5,44 +5,34 @@ const helmet = require('helmet');
 const compression = require('compression');
 require('dotenv').config();
 
-// ✅ IMPORTAR FIREBASE ADMIN CON DIFERENTES MÉTODOS
-let admin = null;
+// ✅ IMPORTAR FIREBASE ADMIN DE FORMA SIMPLE
+let admin;
 let firebaseInitialized = false;
 let firebaseError = null;
 
 try {
-    // Intentar importar de forma normal
     admin = require('firebase-admin');
     console.log('✅ Firebase Admin cargado correctamente');
-} catch (error1) {
-    console.log('⚠️ Error con importación normal:', error1.message);
-    try {
-        // Intentar con importación dinámica (para compatibilidad)
-        const importDynamic = new Function('modulePath', 'return import(modulePath)');
-        const firebaseModule = await importDynamic('firebase-admin');
-        admin = firebaseModule.default || firebaseModule;
-        console.log('✅ Firebase Admin cargado con importación dinámica');
-    } catch (error2) {
-        console.error('❌ Error al cargar firebase-admin:', error2.message);
-        console.log('⚠️ Ejecuta: npm install firebase-admin@11.9.0');
-        admin = null;
-    }
+} catch (error) {
+    console.error('❌ Error al cargar firebase-admin:', error.message);
+    console.log('⚠️ Ejecuta: npm install firebase-admin');
+    admin = null;
 }
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ INICIALIZAR FIREBASE CON VERIFICACIÓN ROBUSTA
+// ✅ INICIALIZAR FIREBASE (SIN await)
 if (admin) {
     try {
-        // Verificar que admin.credential existe
+        // Verificar si admin.credential existe
         if (!admin.credential) {
             console.error('❌ admin.credential no disponible');
             console.log('🔍 admin disponible:', Object.keys(admin));
             throw new Error('admin.credential es undefined');
         }
 
-        // Intentar inicializar con variables de entorno
+        // Verificar si tenemos variables de entorno
         if (process.env.FIREBASE_PROJECT_ID && 
             process.env.FIREBASE_PRIVATE_KEY && 
             process.env.FIREBASE_CLIENT_EMAIL) {
@@ -51,16 +41,15 @@ if (admin) {
             
             // Reemplazar \n en la clave privada
             let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-            // Asegurar que los saltos de línea sean correctos
             privateKey = privateKey.replace(/\\n/g, '\n');
             
-            // Verificar que la clave privada tenga el formato correcto
+            // Verificar formato de la clave
             if (!privateKey.includes('BEGIN PRIVATE KEY')) {
                 console.warn('⚠️ La clave privada no tiene el formato esperado');
                 console.warn('💡 Asegúrate de copiar el valor completo del archivo JSON');
             }
             
-            // Crear las credenciales
+            // Crear credenciales
             const credentials = {
                 projectId: process.env.FIREBASE_PROJECT_ID,
                 privateKey: privateKey,
@@ -71,11 +60,7 @@ if (admin) {
             console.log('📧 Client Email:', credentials.clientEmail);
             console.log('🔑 Private Key length:', credentials.privateKey.length);
             
-            // Verificar que admin.credential.cert existe
-            if (typeof admin.credential.cert !== 'function') {
-                throw new Error('admin.credential.cert no es una función');
-            }
-            
+            // Inicializar Firebase
             admin.initializeApp({
                 credential: admin.credential.cert(credentials),
                 projectId: process.env.FIREBASE_PROJECT_ID
@@ -117,7 +102,6 @@ if (admin) {
         }
     } catch (error) {
         console.error('❌ Error al inicializar Firebase:', error.message);
-        console.error('📚 Stack:', error.stack);
         firebaseError = error.message;
         firebaseInitialized = false;
     }
