@@ -5,26 +5,43 @@ const helmet = require('helmet');
 const compression = require('compression');
 require('dotenv').config();
 
-// ✅ IMPORTAR FIREBASE ADMIN CON MANEJO DE ERRORES
-let admin;
+// ✅ IMPORTAR FIREBASE ADMIN CON DIFERENTES MÉTODOS
+let admin = null;
+let firebaseInitialized = false;
+let firebaseError = null;
+
 try {
+    // Intentar importar de forma normal
     admin = require('firebase-admin');
     console.log('✅ Firebase Admin cargado correctamente');
-} catch (error) {
-    console.error('❌ Error al cargar firebase-admin:', error.message);
-    console.log('⚠️ Ejecuta: npm install firebase-admin');
-    admin = null;
+} catch (error1) {
+    console.log('⚠️ Error con importación normal:', error1.message);
+    try {
+        // Intentar con importación dinámica (para compatibilidad)
+        const importDynamic = new Function('modulePath', 'return import(modulePath)');
+        const firebaseModule = await importDynamic('firebase-admin');
+        admin = firebaseModule.default || firebaseModule;
+        console.log('✅ Firebase Admin cargado con importación dinámica');
+    } catch (error2) {
+        console.error('❌ Error al cargar firebase-admin:', error2.message);
+        console.log('⚠️ Ejecuta: npm install firebase-admin@11.9.0');
+        admin = null;
+    }
 }
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ INICIALIZAR FIREBASE CON VERIFICACIÓN
-let firebaseInitialized = false;
-let firebaseError = null;
-
+// ✅ INICIALIZAR FIREBASE CON VERIFICACIÓN ROBUSTA
 if (admin) {
     try {
+        // Verificar que admin.credential existe
+        if (!admin.credential) {
+            console.error('❌ admin.credential no disponible');
+            console.log('🔍 admin disponible:', Object.keys(admin));
+            throw new Error('admin.credential es undefined');
+        }
+
         // Intentar inicializar con variables de entorno
         if (process.env.FIREBASE_PROJECT_ID && 
             process.env.FIREBASE_PRIVATE_KEY && 
@@ -33,21 +50,39 @@ if (admin) {
             console.log('🔧 Inicializando Firebase con variables de entorno...');
             
             // Reemplazar \n en la clave privada
-            const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+            let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+            // Asegurar que los saltos de línea sean correctos
+            privateKey = privateKey.replace(/\\n/g, '\n');
+            
+            // Verificar que la clave privada tenga el formato correcto
+            if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+                console.warn('⚠️ La clave privada no tiene el formato esperado');
+                console.warn('💡 Asegúrate de copiar el valor completo del archivo JSON');
+            }
+            
+            // Crear las credenciales
+            const credentials = {
+                projectId: process.env.FIREBASE_PROJECT_ID,
+                privateKey: privateKey,
+                clientEmail: process.env.FIREBASE_CLIENT_EMAIL
+            };
+            
+            console.log('📱 Project ID:', credentials.projectId);
+            console.log('📧 Client Email:', credentials.clientEmail);
+            console.log('🔑 Private Key length:', credentials.privateKey.length);
+            
+            // Verificar que admin.credential.cert existe
+            if (typeof admin.credential.cert !== 'function') {
+                throw new Error('admin.credential.cert no es una función');
+            }
             
             admin.initializeApp({
-                credential: admin.credential.cert({
-                    projectId: process.env.FIREBASE_PROJECT_ID,
-                    privateKey: privateKey,
-                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL
-                }),
+                credential: admin.credential.cert(credentials),
                 projectId: process.env.FIREBASE_PROJECT_ID
             });
             
             firebaseInitialized = true;
-            console.log('✅ Firebase Admin SDK inicializado con variables de entorno');
-            console.log(`📱 Project ID: ${process.env.FIREBASE_PROJECT_ID}`);
-            console.log(`📧 Client Email: ${process.env.FIREBASE_CLIENT_EMAIL}`);
+            console.log('✅ Firebase Admin SDK inicializado correctamente');
             
         } else {
             console.log('⚠️ Variables de entorno no configuradas');
@@ -59,17 +94,21 @@ if (admin) {
                 const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
                 
                 if (fs.existsSync(serviceAccountPath)) {
+                    console.log('📁 Cargando archivo local:', serviceAccountPath);
                     const serviceAccount = require('./firebase-service-account.json');
+                    
                     admin.initializeApp({
                         credential: admin.credential.cert(serviceAccount),
                         projectId: serviceAccount.project_id || 'push-notifications-poc'
                     });
+                    
                     firebaseInitialized = true;
-                    console.log('✅ Firebase Admin SDK inicializado con archivo local');
+                    console.log('✅ Firebase inicializado con archivo local');
                     console.log(`📱 Project ID: ${serviceAccount.project_id}`);
                 } else {
                     console.log('❌ Archivo firebase-service-account.json no encontrado');
                     console.log('💡 Configura las variables de entorno en Railway');
+                    firebaseError = 'Archivo de credenciales no encontrado';
                 }
             } catch (fileError) {
                 console.error('❌ Error al cargar archivo local:', fileError.message);
@@ -78,6 +117,7 @@ if (admin) {
         }
     } catch (error) {
         console.error('❌ Error al inicializar Firebase:', error.message);
+        console.error('📚 Stack:', error.stack);
         firebaseError = error.message;
         firebaseInitialized = false;
     }
@@ -129,7 +169,6 @@ app.post('/api/register-device', (req, res) => {
         });
     }
 
-    // Evitar duplicados
     if (!registeredTokens.includes(token)) {
         registeredTokens.push(token);
         console.log(`✅ Dispositivo registrado: ${token.substring(0, 30)}...`);
@@ -163,11 +202,9 @@ app.post('/api/send-notification', async (req, res) => {
         });
     }
 
-    // Verificar si es un token FCM real
     const isFCMToken = token.startsWith('dQjpi') || token.length > 50;
     console.log(`🔑 Tipo de token: ${isFCMToken ? 'FCM REAL' : 'TEST'}`);
     
-    // Verificar si el token está registrado
     const isRegistered = registeredTokens.includes(token);
     console.log(`📌 Token registrado: ${isRegistered ? '✅ SI' : '❌ NO'}`);
     
@@ -194,9 +231,7 @@ app.post('/api/send-notification', async (req, res) => {
 
     try {
         let messageId = null;
-        let fcmError = null;
         
-        // Si es un token FCM real, enviar a Firebase
         if (isFCMToken) {
             try {
                 const message = {
@@ -210,8 +245,7 @@ app.post('/api/send-notification', async (req, res) => {
                         notification: {
                             channelId: 'default_channel',
                             sound: 'default',
-                            priority: 'high',
-                            clickAction: 'FLUTTER_NOTIFICATION_CLICK'
+                            priority: 'high'
                         }
                     },
                     data: {
@@ -229,9 +263,7 @@ app.post('/api/send-notification', async (req, res) => {
                 
             } catch (error) {
                 console.error('❌ Error FCM:', error.message);
-                fcmError = error.message;
                 
-                // Verificar si es un error de token inválido
                 if (error.code === 'messaging/registration-token-not-registered') {
                     console.log('⚠️ Token no válido, eliminando...');
                     const index = registeredTokens.indexOf(token);
@@ -248,12 +280,11 @@ app.post('/api/send-notification', async (req, res) => {
                 
                 return res.status(500).json({
                     success: false,
-                    error: fcmError,
+                    error: error.message,
                     code: error.code || 'FCM_ERROR'
                 });
             }
         } else {
-            // Token de prueba - simular envío
             console.log('📤 Simulando envío para token de prueba');
             messageId = 'test_' + Date.now();
         }
@@ -285,7 +316,7 @@ app.get('/api/tokens', (req, res) => {
     });
 });
 
-// Eliminar todos los tokens (para pruebas)
+// Eliminar todos los tokens
 app.delete('/api/tokens', (req, res) => {
     const count = registeredTokens.length;
     registeredTokens = [];
@@ -297,36 +328,14 @@ app.delete('/api/tokens', (req, res) => {
     });
 });
 
-// Eliminar un token específico
-app.delete('/api/tokens/:token', (req, res) => {
-    const token = req.params.token;
-    const index = registeredTokens.indexOf(token);
-    
-    if (index > -1) {
-        registeredTokens.splice(index, 1);
-        res.json({
-            success: true,
-            message: 'Token eliminado correctamente',
-            timestamp: new Date().toISOString()
-        });
-    } else {
-        res.status(404).json({
-            success: false,
-            error: 'Token no encontrado'
-        });
-    }
-});
-
 // ============================================
 // ✅ RUTAS EXISTENTES
 // ============================================
 
-// Ruta principal
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// Health check
 app.get('/health', (req, res) => {
     res.json({
         status: 'OK',
@@ -335,11 +344,12 @@ app.get('/health', (req, res) => {
         environment: process.env.NODE_ENV || 'development',
         firebaseInitialized: firebaseInitialized,
         firebaseError: firebaseError || null,
-        registeredDevices: registeredTokens.length
+        registeredDevices: registeredTokens.length,
+        adminAvailable: !!admin,
+        credentialAvailable: !!(admin && admin.credential)
     });
 });
 
-// API Status
 app.get('/api/status', (req, res) => {
     res.json({
         status: 'online',
@@ -377,6 +387,7 @@ app.listen(PORT, () => {
         console.log(`❌ Error: ${firebaseError}`);
     }
     console.log(`📊 Dispositivos registrados: ${registeredTokens.length}`);
+    console.log(`🔍 admin.credential disponible: ${!!(admin && admin.credential)}`);
     console.log(`\n📋 Endpoints disponibles:`);
     console.log(`  GET  /health              - Health check`);
     console.log(`  GET  /api/status          - Estado del servidor`);
