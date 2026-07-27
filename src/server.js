@@ -26,11 +26,109 @@ const PORT = process.env.PORT || 3000;
 if (admin) {
     try {
         // Verificar si admin.credential existe
-        if (!admin.credential) {
-            console.error('❌ admin.credential no disponible');
-            console.log('🔍 admin disponible:', Object.keys(admin));
-            throw new Error('admin.credential es undefined');
+        if (admin) {
+        try {
+            // Verificar si admin.credential existe
+            if (!admin.credential) {
+                console.error('❌ admin.credential no disponible');
+                throw new Error('admin.credential es undefined');
+            }
+
+            // Intentar inicializar con variables de entorno
+            if (process.env.FIREBASE_PROJECT_ID && 
+                process.env.FIREBASE_PRIVATE_KEY && 
+                process.env.FIREBASE_CLIENT_EMAIL) {
+                
+                console.log('🔧 Inicializando Firebase con variables de entorno...');
+                
+                let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+                
+                // ✅ Manejar ambos formatos: con \n o con saltos de línea reales
+                // Si la clave contiene \n como texto, reemplazarlos
+                if (privateKey.includes('\\n')) {
+                    privateKey = privateKey.replace(/\\n/g, '\n');
+                    console.log('🔑 Reemplazados \\n por saltos de línea');
+                }
+                
+                // ✅ Verificar que la clave tenga el formato correcto
+                if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+                    console.error('❌ La clave privada no tiene el formato correcto');
+                    console.error('💡 Debe comenzar con: -----BEGIN PRIVATE KEY-----');
+                    throw new Error('Formato de clave privada inválido');
+                }
+                
+                // ✅ Verificar que la clave termine correctamente
+                if (!privateKey.includes('END PRIVATE KEY')) {
+                    console.error('❌ La clave privada no termina correctamente');
+                    console.error('💡 Debe terminar con: -----END PRIVATE KEY-----');
+                    throw new Error('Formato de clave privada inválido');
+                }
+                
+                // ✅ Limpiar espacios extras y saltos de línea duplicados
+                privateKey = privateKey.trim();
+                
+                // Crear credenciales
+                const credentials = {
+                    projectId: process.env.FIREBASE_PROJECT_ID.trim(),
+                    privateKey: privateKey,
+                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL.trim()
+                };
+                
+                console.log('📱 Project ID:', credentials.projectId);
+                console.log('📧 Client Email:', credentials.clientEmail);
+                console.log('🔑 Private Key length:', credentials.privateKey.length);
+                console.log('🔑 Private Key starts with:', credentials.privateKey.substring(0, 30) + '...');
+                
+                // Inicializar Firebase
+                admin.initializeApp({
+                    credential: admin.credential.cert(credentials),
+                    projectId: process.env.FIREBASE_PROJECT_ID.trim()
+                });
+                
+                firebaseInitialized = true;
+                console.log('✅ Firebase Admin SDK inicializado correctamente');
+                
+            } else {
+                console.log('⚠️ Variables de entorno no configuradas');
+                console.log('💡 Usando archivo local (solo desarrollo)');
+                
+                // Fallback: intentar usar el archivo local
+                try {
+                    const fs = require('fs');
+                    const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
+                    
+                    if (fs.existsSync(serviceAccountPath)) {
+                        console.log('📁 Cargando archivo local:', serviceAccountPath);
+                        const serviceAccount = require('./firebase-service-account.json');
+                        
+                        admin.initializeApp({
+                            credential: admin.credential.cert(serviceAccount),
+                            projectId: serviceAccount.project_id || 'quickalerts-eba8c'
+                        });
+                        
+                        firebaseInitialized = true;
+                        console.log('✅ Firebase inicializado con archivo local');
+                        console.log(`📱 Project ID: ${serviceAccount.project_id}`);
+                    } else {
+                        console.log('❌ Archivo firebase-service-account.json no encontrado');
+                        console.log('💡 Configura las variables de entorno en Railway');
+                        firebaseError = 'Archivo de credenciales no encontrado';
+                    }
+                } catch (fileError) {
+                    console.error('❌ Error al cargar archivo local:', fileError.message);
+                    firebaseError = fileError.message;
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error al inicializar Firebase:', error.message);
+            console.error('📚 Stack:', error.stack);
+            firebaseError = error.message;
+            firebaseInitialized = false;
         }
+    } else {
+        console.log('⚠️ Firebase Admin no disponible');
+        firebaseError = 'firebase-admin no instalado';
+    }
 
         // Verificar si tenemos variables de entorno
         if (process.env.FIREBASE_PROJECT_ID && 
